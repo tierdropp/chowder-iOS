@@ -268,6 +268,13 @@ final class ChatService: NSObject {
         }
     }
 
+    /// Restart polling after a reconnection during an active run.
+    /// Called from the ViewModel when it detects isLoading is still true after reconnect.
+    func restartHistoryPolling() {
+        log("[HISTORY] 🔄 Restarting polling after reconnect")
+        startHistoryPolling()
+    }
+    
     /// Stop polling chat.history
     private func stopHistoryPolling() {
         historyPollTimer?.invalidate()

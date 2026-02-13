@@ -222,6 +222,12 @@ final class ChatViewModel: ChatServiceDelegate {
         // Workspace sync disabled - identity/profile are updated via tool events
         // when the agent writes to IDENTITY.md or USER.md
         log("Using cached identity: \(botIdentity.name)")
+        
+        // If we reconnected while a run was active, restart polling
+        if isLoading {
+            log("🔄 Reconnected during active run — restarting history polling")
+            chatService?.restartHistoryPolling()
+        }
     }
 
     func chatServiceDidDisconnect() {
