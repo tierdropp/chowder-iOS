@@ -112,26 +112,18 @@ struct ChatView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 20))
 
                 Button {
-                    // Dismiss keyboard first, before any other operations
                     isInputFocused = false
-                    
-                    if viewModel.isLoading {
-                        viewModel.stopGeneration()
-                    } else {
-                        viewModel.send()
-                    }
+                    viewModel.send()
                 } label: {
-                    Image(systemName: viewModel.isLoading ? "stop.circle.fill" : "arrow.up.circle.fill")
+                    Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 32))
                         .foregroundStyle(
-                            viewModel.isLoading
-                                ? Color.black
-                                : (viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                    ? Color(.systemGray4)
-                                    : Color.blue)
+                            viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading
+                                ? Color(.systemGray4)
+                                : Color.blue
                         )
                 }
-                .disabled(!viewModel.isLoading && viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)

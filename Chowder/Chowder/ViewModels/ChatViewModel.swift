@@ -203,26 +203,6 @@ final class ChatViewModel: ChatServiceDelegate {
         chatService?.send(text: text)
         log("chatService.send() called")
     }
-    
-    func stopGeneration() {
-        log("stopGeneration() - sending 'stop' command")
-        
-        // Trigger haptic feedback
-        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-        impactFeedback.impactOccurred()
-        
-        // Send "stop" command to OpenClaw
-        chatService?.send(text: "stop")
-        
-        // Immediately stop loading state and clear activity
-        isLoading = false
-        currentActivity?.finishCurrentSteps()
-        lastCompletedActivity = currentActivity
-        currentActivity = nil
-        shimmerStartTime = nil
-        
-        log("Stop command sent, cleared UI state")
-    }
 
     func clearMessages() {
         messages.removeAll()
