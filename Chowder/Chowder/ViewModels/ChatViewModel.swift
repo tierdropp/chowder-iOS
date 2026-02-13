@@ -74,6 +74,9 @@ final class ChatViewModel: ChatServiceDelegate {
     /// Used to discard stale history responses from previous runs
     private var currentRunGeneration: Int = 0
     
+    /// Timestamp when the current run started - used to filter old history items
+    private var currentRunStartTime: Date?
+    
     /// Tracks seen thinking items by their thinkingSignature.id to prevent duplicates
     private var seenThinkingIds: Set<String> = []
     
@@ -182,9 +185,10 @@ final class ChatViewModel: ChatServiceDelegate {
         currentActivity?.currentLabel = "Thinking..."
         shimmerStartTime = Date()
         
-        // Increment generation counter to discard stale history responses
+        // Increment generation counter and capture start time to filter old items
         currentRunGeneration += 1
-        log("Starting new run generation \(currentRunGeneration)")
+        currentRunStartTime = Date()
+        log("Starting new run generation \(currentRunGeneration) at \(currentRunStartTime!)")
         
         // Clear history parsing state for new run
         seenThinkingIds.removeAll()
@@ -451,6 +455,16 @@ final class ChatViewModel: ChatServiceDelegate {
         guard let role = item["role"] as? String else {
             log("⚠️ History item missing 'role' field, keys: \(Array(item.keys))")
             return
+        }
+        
+        // Filter out items from before this run started
+        if let startTime = currentRunStartTime,
+           let timestampMs = item["timestamp"] as? Double {
+            let itemDate = Date(timeIntervalSince1970: timestampMs / 1000.0)
+            if itemDate < startTime {
+                // Item is from before current run - skip it
+                return
+            }
         }
         
         log("📋 Processing history item: role=\(role)")
