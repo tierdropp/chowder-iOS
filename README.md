@@ -7,13 +7,10 @@ Chowder is a native iOS chat client that connects to an [OpenClaw](https://docs.
 - **Real-time chat** with streaming AI responses via WebSocket
 - **Persistent chat history** stored locally (survives app kill/relaunch)
 - **Agent identity sync** -- dynamically mirrors the bot's IDENTITY.md (name, creature, vibe, emoji) and USER.md (what the bot knows about you) from the OpenClaw workspace
-- **"Thinking..." shimmer** -- shows an animated status line while the agent is working, with a minimum display duration so it doesn't flash on fast responses
-- **Real-time activity tracking** -- polls `chat.history` during agent runs to show intelligent progress updates:
-  - Displays thinking steps with markdown stripped (e.g., "Appending weather summary to file...")
-  - Shows tool intents derived from commands (e.g., "Updating weather.txt..." instead of generic "Running a command...")
-  - Displays completion timing (e.g., "Updated weather.txt (13ms)")
-  - Parses assistant message `content` arrays to extract thinking and toolCall items
-- **Activity detail card** -- tap the shimmer to see the full list of thinking steps and tool calls the agent performed
+- **Live activity tracking** -- while the agent works, Chowder polls `chat.history` and displays inline thinking steps and tool activity directly in the chat. Each step appears with a light haptic tap and fades out when the answer starts streaming. Examples:
+  - "Considering web search options..."
+  - "Fetching data..." / "Appending to weather.txt..."
+  - "exec completed (859ms)"
 - **Custom agent avatar** -- pick a profile photo for the agent from your photo library
 - **Settings sync** -- edit the bot's identity or your user profile in Settings and the changes are written back to the OpenClaw workspace files
 - **Automatic reconnection** with 3-second backoff after network interruptions
