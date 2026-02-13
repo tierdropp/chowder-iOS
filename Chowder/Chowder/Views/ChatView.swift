@@ -43,6 +43,9 @@ struct ChatView: View {
                                     .transition(.opacity.combined(with: .move(edge: .top)))
                                     .onAppear {
                                         print("🎨 Completed step appeared: '\(step.label)'")
+                                        // Light haptic when step appears
+                                        let haptic = UIImpactFeedbackGenerator(style: .light)
+                                        haptic.impactOccurred()
                                     }
                                 }
                             }
