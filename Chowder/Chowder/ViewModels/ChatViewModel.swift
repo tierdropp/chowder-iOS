@@ -452,12 +452,14 @@ final class ChatViewModel: ChatServiceDelegate {
             return
         }
         
-        // Filter out items from before this run started
+        // Filter out items from before this run started (with 10 second buffer for clock skew)
         if let startTime = currentRunStartTime,
            let timestampMs = item["timestamp"] as? Double {
             let itemDate = Date(timeIntervalSince1970: timestampMs / 1000.0)
-            if itemDate < startTime {
-                // Item is from before current run - skip it
+            // Allow items up to 10 seconds before run start (accounts for clock skew)
+            let bufferTime = startTime.addingTimeInterval(-10)
+            if itemDate < bufferTime {
+                log("⏰ Skipping old item: itemDate=\(itemDate) bufferTime=\(bufferTime)")
                 return
             }
         }
