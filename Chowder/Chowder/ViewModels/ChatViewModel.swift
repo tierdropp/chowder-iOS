@@ -275,6 +275,14 @@ final class ChatViewModel: ChatServiceDelegate {
         shimmerStartTime = nil
         log("Cleared currentActivity for generation \(currentRunGeneration), isLoading=\(isLoading)")
 
+        // If the assistant message is still empty, remove it to avoid a blank bubble
+        if let lastIndex = messages.indices.last,
+           messages[lastIndex].role == .assistant,
+           messages[lastIndex].content.isEmpty {
+            messages.remove(at: lastIndex)
+            log("Removed empty assistant message bubble")
+        }
+        
         LocalStorage.saveMessages(messages)
     }
 
@@ -468,6 +476,19 @@ final class ChatViewModel: ChatServiceDelegate {
         
         switch role {
         case "assistant":
+            // Check for error messages from the gateway/provider
+            if let errorMessage = item["errorMessage"] as? String, !errorMessage.isEmpty {
+                log("❌ History: assistant error - \(errorMessage)")
+                // Show error in the chat if the current response is empty
+                if let lastIndex = messages.indices.last,
+                   messages[lastIndex].role == .assistant,
+                   messages[lastIndex].content.isEmpty {
+                    messages[lastIndex].content = "Error: \(errorMessage)"
+                    LocalStorage.saveMessages(messages)
+                }
+                return
+            }
+            
             // Assistant messages contain content arrays with thinking and toolCall items
             if let contentArray = item["content"] as? [[String: Any]] {
                 log("📝 Assistant message with \(contentArray.count) content items")
