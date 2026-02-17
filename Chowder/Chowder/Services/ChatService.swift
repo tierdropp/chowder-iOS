@@ -43,7 +43,7 @@ final class ChatService: NSObject {
     private var seenSequenceNumbers: Set<Int> = []
     private var seenToolCallIds: Set<String> = []  // Dedupe by toolCallId
     private var seenTimestamps: Set<String> = []   // Fallback dedupe by timestamp
-    private let historyPollInterval: TimeInterval = 0.5  // 500ms
+    private let historyPollInterval: TimeInterval = 1.0  // 1 second
 
     init(gatewayURL: String, token: String, sessionKey: String = "agent:main:main") {
         self.gatewayURL = gatewayURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -227,7 +227,7 @@ final class ChatService: NSObject {
             "method": "chat.history",
             "params": [
                 "sessionKey": sessionKey,
-                "limit": 10  // Small limit since we poll every 500ms
+                "limit": 5  // Keep small to reduce response size over Tailscale
             ]
         ]
         
