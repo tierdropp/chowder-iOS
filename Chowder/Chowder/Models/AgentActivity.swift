@@ -1,14 +1,39 @@
 import Foundation
 
+/// Category of tool being used — drives the icon shown in the activity row.
+enum ToolCategory: String {
+    case thinking       // Internal reasoning
+    case terminal       // exec, bash, shell commands
+    case browser        // agent-browser, web browsing
+    case network        // curl, wget, http fetch
+    case fileSystem     // file read/write, fs operations
+    case search         // search, vector lookup
+    case generic        // fallback for unknown tools
+
+    /// SF Symbol name for this category.
+    var iconName: String {
+        switch self {
+        case .thinking:   return "arrow.turn.down.right"
+        case .terminal:   return "terminal"
+        case .browser:    return "globe"
+        case .network:    return "arrow.down.circle"
+        case .fileSystem: return "doc"
+        case .search:     return "magnifyingglass"
+        case .generic:    return "gearshape"
+        }
+    }
+}
+
 /// Represents one step the agent performed during a turn.
 struct ActivityStep: Identifiable {
     let id = UUID()
     let timestamp = Date()
     let type: StepType
-    let label: String       // "Thinking", "Reading IDENTITY.md...", etc.
-    var detail: String       // Full thinking text or tool path/args summary
+    let label: String            // "Thinking", "Reading IDENTITY.md...", etc.
+    var detail: String            // Full thinking text or tool path/args summary
     var status: Status = .inProgress
-    var completedAt: Date?  // Set when status changes to .completed
+    var completedAt: Date?       // Set when status changes to .completed
+    var toolCategory: ToolCategory = .generic  // Category for icon selection
 
     enum StepType {
         case thinking

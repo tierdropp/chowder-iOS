@@ -34,15 +34,10 @@ struct ActivityStepRow: View {
     // MARK: - Helpers
 
     private var iconName: String {
-        switch step.type {
-        case .thinking:
-            return "checkmark.circle"
-        case .toolCall:
-            switch step.status {
-            case .completed: return "checkmark.circle"
-            case .failed:    return "xmark.circle"
-            case .inProgress: return "circle.dotted"
-            }
+        switch step.status {
+        case .failed:    return "xmark.circle"
+        case .inProgress: return "circle.dotted"
+        case .completed: return step.toolCategory.iconName
         }
     }
 

@@ -227,7 +227,7 @@ final class ChatService: NSObject {
             "method": "chat.history",
             "params": [
                 "sessionKey": sessionKey,
-                "limit": 5  // Keep small to reduce response size over Tailscale
+                "limit": 10
             ]
         ]
         
@@ -565,6 +565,10 @@ final class ChatService: NSObject {
                             self.delegate?.chatServiceDidReceiveToolEvent(name: toolName, path: toolPath, args: nil)
                         }
                     }
+                case "final":
+                    // chat/final is a signal that the turn is complete.
+                    // Payload is typically [runId, seq, sessionKey, state] — no message text.
+                    self.log("[HANDLE] 📨 chat/final")
                 case "aborted":
                     self.log("[HANDLE] ⚠️ chat aborted")
                     self.delegate?.chatServiceDidFinishMessage()
@@ -573,6 +577,7 @@ final class ChatService: NSObject {
                     self.log("[HANDLE] ❌ Chat error: \(msg)")
                     self.delegate?.chatServiceDidReceiveError(ChatServiceError.gatewayError(msg))
                 default:
+                    self.log("[HANDLE] chat state: \(state ?? "nil")")
                     break
                 }
 
@@ -663,10 +668,8 @@ final class ChatService: NSObject {
         // Reset request-in-flight flag to allow next poll
         historyRequestInFlight = false
         
-        guard activeRunId != nil else {
-            log("[HISTORY] ⚠️ Not polling, skipping processing")
-            return
-        }
+        // Always forward items to delegate — they handle filtering.
+        // (Previously we gated on activeRunId, but post-run fetches need to get through.)
         
         log("[HISTORY] Processing \(items.count) items")
         

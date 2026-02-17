@@ -73,8 +73,8 @@ struct AgentActivityCard: View {
 
     private func stepRow(_ step: ActivityStep) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            // Icon
-            Image(systemName: "checkmark.circle")
+            // Category icon
+            Image(systemName: step.toolCategory.iconName)
                 .font(.system(size: 12))
                 .foregroundStyle(.gray)
                 .frame(width: 20, alignment: .center)

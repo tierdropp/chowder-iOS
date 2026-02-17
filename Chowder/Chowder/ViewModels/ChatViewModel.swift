@@ -61,6 +61,7 @@ final class ChatViewModel: ChatServiceDelegate {
     /// Light haptic fired once when the assistant's response starts streaming.
     @ObservationIgnored private let responseHaptic = UIImpactFeedbackGenerator(style: .light)
     @ObservationIgnored private var hasPlayedResponseHaptic = false
+    @ObservationIgnored private var hasReceivedAnyDelta = false
 
     private var chatService: ChatService?
 
@@ -82,6 +83,8 @@ final class ChatViewModel: ChatServiceDelegate {
     
     /// Tracks seen tool calls by their id to prevent duplicates
     private var seenToolCallIds: Set<String> = []
+    /// Separate set for tool results — must not collide with seenToolCallIds
+    private var seenToolResultIds: Set<String> = []
     
     /// Metadata for tool calls, keyed by toolCallId, used to show completion info
     private var toolCallMetadata: [String: ToolCallMeta] = [:]
@@ -91,6 +94,7 @@ final class ChatViewModel: ChatServiceDelegate {
         let toolName: String
         let arguments: [String: Any]
         let derivedIntent: String
+        let category: ToolCategory
     }
 
     // MARK: - Live Activity Tracking State
@@ -226,6 +230,7 @@ final class ChatViewModel: ChatServiceDelegate {
         guard !text.isEmpty, !isLoading else { return }
 
         hasPlayedResponseHaptic = false
+        hasReceivedAnyDelta = false
         responseHaptic.prepare()
 
         messages.append(Message(role: .user, content: text))
@@ -245,6 +250,7 @@ final class ChatViewModel: ChatServiceDelegate {
         // Clear history parsing state for new run
         seenThinkingIds.removeAll()
         seenToolCallIds.removeAll()
+        seenToolResultIds.removeAll()
         toolCallMetadata.removeAll()
         resetLiveActivityState()
         log("shimmer started — label=\"Thinking...\"")
@@ -292,6 +298,7 @@ final class ChatViewModel: ChatServiceDelegate {
         guard let lastIndex = messages.indices.last,
               messages[lastIndex].role == .assistant else { return }
         messages[lastIndex].content += text
+        hasReceivedAnyDelta = true
 
         // Light haptic on the first streaming delta of a response
         if !hasPlayedResponseHaptic {
@@ -323,7 +330,7 @@ final class ChatViewModel: ChatServiceDelegate {
         isLoading = false
         hasPlayedResponseHaptic = false
         
-        log("Set isLoading=false, hasPlayedResponseHaptic=false")
+        log("Set isLoading=false, hasPlayedResponseHaptic=false, hasReceivedAnyDelta=\(hasReceivedAnyDelta)")
 
         // Mark all remaining in-progress steps as completed
         currentActivity?.finishCurrentSteps()
@@ -342,12 +349,33 @@ final class ChatViewModel: ChatServiceDelegate {
         shimmerStartTime = nil
         log("Cleared currentActivity for generation \(currentRunGeneration), isLoading=\(isLoading)")
 
-        // If the assistant message is still empty, remove it to avoid a blank bubble
+        // If the assistant message is still empty, remove it to avoid a blank bubble.
+        // BUT: if no deltas were received, the response might still come via a late
+        // history poll. Request one final fetch and defer cleanup.
         if let lastIndex = messages.indices.last,
            messages[lastIndex].role == .assistant,
            messages[lastIndex].content.isEmpty {
-            messages.remove(at: lastIndex)
-            log("Removed empty assistant message bubble")
+            if hasReceivedAnyDelta {
+                messages.remove(at: lastIndex)
+                log("Removed empty assistant message bubble")
+            } else {
+                // No response received at all. Do one final history fetch to
+                // catch error messages or fast responses the polling missed.
+                log("No deltas received — requesting final history fetch")
+                let gen = currentRunGeneration
+                chatService?.fetchRecentHistory(limit: 10)
+                // Safety: remove the empty bubble after 3s if nothing fills it
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                    guard let self, self.currentRunGeneration == gen else { return }
+                    if let lastIdx = self.messages.indices.last,
+                       self.messages[lastIdx].role == .assistant,
+                       self.messages[lastIdx].content.isEmpty {
+                        self.messages.remove(at: lastIdx)
+                        self.log("Removed empty assistant bubble (final fetch timeout)")
+                        LocalStorage.saveMessages(self.messages)
+                    }
+                }
+            }
         }
         
         LocalStorage.saveMessages(messages)
@@ -438,7 +466,7 @@ final class ChatViewModel: ChatServiceDelegate {
         } else {
             currentActivity?.finishCurrentSteps()
             currentActivity?.steps.append(
-                ActivityStep(type: .thinking, label: "Thinking", detail: text)
+                ActivityStep(type: .thinking, label: "Thinking", detail: text, toolCategory: .thinking)
             )
         }
 
@@ -571,15 +599,69 @@ final class ChatViewModel: ChatServiceDelegate {
     func chatServiceDidReceiveHistoryMessages(_ messages: [[String: Any]]) {
         log("Processing \(messages.count) new history items for generation \(currentRunGeneration)")
         
-        // Discard late-arriving history from previous runs
-        guard currentActivity != nil else {
-            log("⚠️ No current activity - discarding stale history from previous run")
+        if currentActivity != nil {
+            // Normal case: activity is running, process items for thinking/tool steps
+            for item in messages {
+                processHistoryItem(item)
+            }
+        } else if !isLoading {
+            // Post-run: catch responses/errors that polling missed (fast runs).
+            // Scan assistant messages from the current run for content or errorMessage.
+            for item in messages {
+                guard let role = item["role"] as? String, role == "assistant" else { continue }
+                
+                // Filter by timestamp to only show items from the current run
+                if let startTime = currentRunStartTime,
+                   let timestampMs = item["timestamp"] as? Double {
+                    let itemDate = Date(timeIntervalSince1970: timestampMs / 1000.0)
+                    if itemDate < startTime.addingTimeInterval(-10) { continue }
+                }
+                
+                // Check for error message first
+                if let errorMsg = item["errorMessage"] as? String, !errorMsg.isEmpty {
+                    log("📨 Found error in post-run history: \(errorMsg)")
+                    applyPostRunText("Error: \(errorMsg)")
+                    return
+                }
+                
+                // Check for normal text content (fast response without streaming)
+                if let contentArray = item["content"] as? [[String: Any]] {
+                    let textParts = contentArray.compactMap { block -> String? in
+                        guard block["type"] as? String == "text" else { return nil }
+                        return block["text"] as? String
+                    }
+                    let joined = textParts.joined()
+                    if !joined.isEmpty {
+                        log("📨 Found response in post-run history (\(joined.count) chars)")
+                        applyPostRunText(joined)
+                        return
+                    }
+                }
+            }
+        } else {
+            log("⚠️ Discarding history items (no activity, still loading)")
+        }
+    }
+
+    /// Apply text to the assistant bubble after the run has finished.
+    /// Used when a final history fetch finds a response that polling missed.
+    private func applyPostRunText(_ text: String) {
+        if let lastIndex = self.messages.indices.last,
+           self.messages[lastIndex].role == .assistant,
+           self.messages[lastIndex].content.isEmpty {
+            self.messages[lastIndex].content = text
+        } else if self.messages.last?.role != .assistant {
+            self.messages.append(Message(role: .assistant, content: text))
+        } else {
+            // Bubble already has content — don't overwrite
+            log("📨 Skipping post-run text (bubble already has content)")
             return
         }
-        
-        for item in messages {
-            processHistoryItem(item)
+        if !hasPlayedResponseHaptic {
+            hasPlayedResponseHaptic = true
+            responseHaptic.impactOccurred()
         }
+        LocalStorage.saveMessages(self.messages)
     }
 
     /// Parse a single history item and update activity
@@ -721,10 +803,13 @@ final class ChatViewModel: ChatServiceDelegate {
             let intentLabel = summary ?? cleanText
             log("💭 Thinking: \(intentLabel)")
 
+            // Mark previous steps (including tool calls) as completed
+            currentActivity?.finishCurrentSteps()
+            
             // Show as one-line progress
             currentActivity?.currentLabel = intentLabel + "..."
             currentActivity?.steps.append(
-                ActivityStep(type: .thinking, label: intentLabel, detail: "")
+                ActivityStep(type: .thinking, label: intentLabel, detail: "", toolCategory: .thinking)
             )
 
             // Update the Live Activity -- thinking steps shift the intent stack AND update bottom
@@ -757,27 +842,28 @@ final class ChatViewModel: ChatServiceDelegate {
         
         let arguments = contentItem["arguments"] as? [String: Any] ?? [:]
         
-        // Derive intent from tool call
+        // Derive intent and category from tool call
         let intent = deriveIntentFromToolCall(name: toolName, arguments: arguments)
         
         // Store metadata for later use when toolResult arrives
         toolCallMetadata[toolCallId] = ToolCallMeta(
             toolName: toolName,
             arguments: arguments,
-            derivedIntent: intent
+            derivedIntent: intent.label,
+            category: intent.category
         )
         
-        log("🔧 Tool call: \(intent)")
+        log("🔧 Tool call: \(intent.label) [\(intent.category.rawValue)]")
         
         // Show intent as progress
         currentActivity?.finishCurrentSteps()
-        currentActivity?.currentLabel = intent
+        currentActivity?.currentLabel = intent.label
         currentActivity?.steps.append(
-            ActivityStep(type: .toolCall, label: intent, detail: "")
+            ActivityStep(type: .toolCall, label: intent.label, detail: "", toolCategory: intent.category)
         )
 
         // Update the Live Activity -- tool events only update the bottom row
-        liveActivityBottomText = intent
+        liveActivityBottomText = intent.label
         liveActivityStepNumber = (currentActivity?.steps.count ?? 0)
         pushLiveActivityUpdate()
     }
@@ -796,11 +882,14 @@ final class ChatViewModel: ChatServiceDelegate {
             liveActivityCost = String(format: "$%.3f", liveActivityCostAccumulator)
         }
 
-        // Skip if already processed
-        guard !seenToolCallIds.contains(toolCallId) else {
+        // Always mark in-progress steps (including the matching tool call) as completed
+        currentActivity?.finishCurrentSteps()
+
+        // Skip adding a completion step if we already processed this result
+        guard !seenToolResultIds.contains(toolCallId) else {
             return
         }
-        seenToolCallIds.insert(toolCallId)
+        seenToolResultIds.insert(toolCallId)
         
         let details = item["details"] as? [String: Any]
         let duration = details?["durationMs"] as? Int ?? 0
@@ -813,7 +902,6 @@ final class ChatViewModel: ChatServiceDelegate {
         if isError || exitCode != 0 {
             completionLabel = "Command failed"
         } else if let meta = toolCallMetadata[toolCallId] {
-            // Use the intent we derived earlier
             let baseIntent = meta.derivedIntent.replacingOccurrences(of: "...", with: "")
             completionLabel = "\(baseIntent) (\(duration)ms)"
         } else {
@@ -822,69 +910,189 @@ final class ChatViewModel: ChatServiceDelegate {
         
         log("✅ Tool result: \(completionLabel)")
         
-        // Mark previous step as completed and add completion
-        currentActivity?.finishCurrentSteps()
+        // Add completion step with same category as the original tool call
+        let category = toolCallMetadata[toolCallId]?.category ?? .generic
         currentActivity?.steps.append(
-            ActivityStep(type: .toolCall, label: completionLabel, detail: "", status: .completed)
+            ActivityStep(type: .toolCall, label: completionLabel, detail: "", status: .completed, toolCategory: category)
         )
     }
 
-    /// Derive a user-friendly intent description from a tool call
-    private func deriveIntentFromToolCall(name: String, arguments: [String: Any]) -> String {
-        switch name {
-        case "exec", "bash":
-            if let command = arguments["command"] as? String {
-                // Check for file operations with output redirection
-                if let filename = extractFilenameFromRedirect(command) {
-                    if command.contains("cat ") && command.contains(">>") {
-                        return "Appending to \(filename)..."
-                    } else if command.contains(">>") {
-                        return "Updating \(filename)..."
-                    } else if command.contains(">") {
-                        return "Writing \(filename)..."
-                    }
+    /// Result of classifying a tool call — provides both a display label and category for icon selection.
+    private struct ToolIntent {
+        let label: String
+        let category: ToolCategory
+    }
+
+    /// Derive a user-friendly intent description and category from a tool call.
+    private func deriveIntentFromToolCall(name: String, arguments: [String: Any]) -> ToolIntent {
+        let lowName = name.lowercased()
+
+        // ── exec / bash / shell: inspect the command string ──
+        if lowName == "exec" || lowName == "bash" || lowName.hasPrefix("shell") {
+            guard let command = arguments["command"] as? String else {
+                return ToolIntent(label: "Running a command...", category: .terminal)
+            }
+
+            // Browser commands (agent-browser open '...')
+            if command.contains("agent-browser") {
+                let query = extractBrowserQuery(command)
+                if let q = query {
+                    return ToolIntent(label: "Searching \"\(q)\"...", category: .browser)
                 }
-                
-                // Check for other common commands
-                if command.contains("curl") || command.contains("wget") {
-                    return "Fetching data..."
+                let url = extractBrowserURL(command)
+                if let u = url {
+                    let host = hostFromURL(u)
+                    return ToolIntent(label: "Browsing \(host)...", category: .browser)
                 }
-                if command.contains("git") {
-                    return "Running git command..."
+                return ToolIntent(label: "Using browser...", category: .browser)
+            }
+
+            // Network requests
+            if command.contains("curl") || command.contains("wget") || command.contains("http") {
+                let host = extractHostFromCurl(command)
+                if let h = host {
+                    return ToolIntent(label: "Fetching from \(h)...", category: .network)
                 }
-                
-                // Generic fallback
-                return "Running a command..."
+                return ToolIntent(label: "Fetching data...", category: .network)
             }
-            
-        case "read", "Read":
-            if let path = arguments["path"] as? String {
-                let filename = (path as NSString).lastPathComponent
-                return "Reading \(filename)..."
+
+            // File redirects (cat >> file.txt, echo > file.txt)
+            if let filename = extractFilenameFromRedirect(command) {
+                if command.contains(">>") {
+                    return ToolIntent(label: "Appending to \(filename)...", category: .fileSystem)
+                } else {
+                    return ToolIntent(label: "Writing \(filename)...", category: .fileSystem)
+                }
             }
-            return "Reading file..."
-            
-        case "write", "Write":
-            if let path = arguments["path"] as? String {
-                let filename = (path as NSString).lastPathComponent
-                return "Writing \(filename)..."
+
+            // File reads
+            if command.hasPrefix("cat ") && !command.contains(">") {
+                let parts = command.split(separator: " ")
+                if parts.count >= 2 {
+                    let filename = (String(parts[1]) as NSString).lastPathComponent
+                    return ToolIntent(label: "Reading \(filename)...", category: .fileSystem)
+                }
             }
-            return "Writing file..."
-            
-        case "browser", "web":
-            if let query = arguments["query"] as? String {
-                return "Searching for \(query)..."
+
+            // Git
+            if command.contains("git ") {
+                return ToolIntent(label: "Running git...", category: .terminal)
             }
-            if let url = arguments["url"] as? String {
-                return "Opening \(url)..."
+
+            // Search tools (grep, rg, find)
+            if command.hasPrefix("grep ") || command.hasPrefix("rg ") || command.hasPrefix("find ") {
+                return ToolIntent(label: "Searching files...", category: .search)
             }
-            return "Using browser..."
-            
-        default:
-            return "Using \(name)..."
+
+            // ls, pwd, etc.
+            if command.hasPrefix("ls") || command.hasPrefix("pwd") || command.hasPrefix("stat ") {
+                return ToolIntent(label: "Checking files...", category: .fileSystem)
+            }
+
+            // mkdir, cp, mv, rm
+            if command.hasPrefix("mkdir ") || command.hasPrefix("cp ") ||
+               command.hasPrefix("mv ") || command.hasPrefix("rm ") {
+                return ToolIntent(label: "Managing files...", category: .fileSystem)
+            }
+
+            return ToolIntent(label: "Running a command...", category: .terminal)
         }
-        
-        return "Using \(name)..."
+
+        // ── Direct tool names (non-exec wrappers) ──
+
+        // File I/O
+        if lowName == "read" || lowName.hasPrefix("fs.read") || lowName.hasPrefix("file_read") {
+            if let path = arguments["path"] as? String {
+                let filename = (path as NSString).lastPathComponent
+                return ToolIntent(label: "Reading \(filename)...", category: .fileSystem)
+            }
+            return ToolIntent(label: "Reading file...", category: .fileSystem)
+        }
+
+        if lowName == "write" || lowName.hasPrefix("fs.write") || lowName.hasPrefix("file_write") {
+            if let path = arguments["path"] as? String {
+                let filename = (path as NSString).lastPathComponent
+                return ToolIntent(label: "Writing \(filename)...", category: .fileSystem)
+            }
+            return ToolIntent(label: "Writing file...", category: .fileSystem)
+        }
+
+        if lowName.hasPrefix("fs.") {
+            return ToolIntent(label: "Updating files...", category: .fileSystem)
+        }
+
+        // Browser
+        if lowName.hasPrefix("browser") || lowName == "web" || lowName == "web_browse" {
+            if let query = arguments["query"] as? String, !query.isEmpty {
+                return ToolIntent(label: "Searching \"\(query)\"...", category: .browser)
+            }
+            if let url = arguments["url"] as? String, !url.isEmpty {
+                let host = hostFromURL(url)
+                return ToolIntent(label: "Browsing \(host)...", category: .browser)
+            }
+            return ToolIntent(label: "Using browser...", category: .browser)
+        }
+
+        // Network / HTTP
+        if lowName == "web_fetch" || lowName.hasPrefix("http") || lowName == "fetch" {
+            if let url = arguments["url"] as? String, !url.isEmpty {
+                let host = hostFromURL(url)
+                return ToolIntent(label: "Fetching \(host)...", category: .network)
+            }
+            return ToolIntent(label: "Fetching data...", category: .network)
+        }
+
+        // Search
+        if lowName == "search" || lowName.hasPrefix("vector") || lowName == "grep" || lowName == "find" {
+            if let query = arguments["query"] as? String, !query.isEmpty {
+                return ToolIntent(label: "Searching \"\(query)\"...", category: .search)
+            }
+            return ToolIntent(label: "Searching...", category: .search)
+        }
+
+        // Fallback
+        return ToolIntent(label: "Using \(name)...", category: .generic)
+    }
+
+    // MARK: - URL / Command Parsing Helpers
+
+    /// Extract a search query from an agent-browser command (e.g. DuckDuckGo q= parameter).
+    private func extractBrowserQuery(_ command: String) -> String? {
+        // Match ?q=... or &q=... in URLs
+        guard let range = command.range(of: #"[?&]q=([^&'\"]+)"#, options: .regularExpression) else {
+            return nil
+        }
+        let match = String(command[range])
+        let query = match.dropFirst(3) // drop "?q=" or "&q="
+        return query
+            .replacingOccurrences(of: "+", with: " ")
+            .removingPercentEncoding?
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Extract the URL from an agent-browser open command.
+    private func extractBrowserURL(_ command: String) -> String? {
+        guard let range = command.range(of: #"https?://[^\s'\"]+|'https?://[^']+'"#, options: .regularExpression) else {
+            return nil
+        }
+        return String(command[range]).trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+    }
+
+    /// Extract host from a curl/wget command URL.
+    private func extractHostFromCurl(_ command: String) -> String? {
+        guard let url = command.range(of: #"https?://[^\s'\"]+|'https?://[^']+'"#, options: .regularExpression) else {
+            return nil
+        }
+        let urlStr = String(command[url]).trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+        return hostFromURL(urlStr)
+    }
+
+    /// Extract just the hostname from a URL string (e.g. "api.open-meteo.com").
+    private func hostFromURL(_ urlString: String) -> String {
+        if let components = URLComponents(string: urlString), let host = components.host {
+            return host
+        }
+        return urlString
     }
     
     /// Extract filename from shell redirect (>> or >)
