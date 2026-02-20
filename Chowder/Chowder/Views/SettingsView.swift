@@ -161,6 +161,33 @@ struct SettingsView: View {
                         }
                     }
 
+                    // MARK: - Developer Section
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Developer")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 4)
+                            .padding(.top, 8)
+
+                        GlassCard {
+                            Button {
+                                LiveActivityManager.shared.startDemo()
+                            } label: {
+                                HStack(spacing: 12) {
+                                    GlassIcon(systemName: "platter.filled.bottom.and.arrow.down.iphone", size: 32, iconSize: 14)
+
+                                    Text("Live Activity Demo")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.primary)
+
+                                    Spacer()
+                                }
+                            }
+                        }
+                    }
+
                     // MARK: - Data Section
 
                     VStack(alignment: .leading, spacing: 6) {

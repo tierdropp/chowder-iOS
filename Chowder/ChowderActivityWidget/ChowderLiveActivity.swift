@@ -83,8 +83,7 @@ struct ChowderLiveActivity: Widget {
         @Environment(\.colorScheme) var colorScheme
         
         
-        let primaryForeground: Color = .primary
-        let systemBackground: Color = Color(uiColor: .systemBackground)
+        let primaryForeground: Color = Color(red: 47/255, green: 59/255, blue: 84/255)
         let userTaskOpacity: CGFloat = colorScheme == .dark ? 0.24 : 0.12
         
         VStack(alignment: .leading, spacing: 4) {
@@ -109,7 +108,7 @@ struct ChowderLiveActivity: Widget {
                         }
                     }
                     .font(.callout.bold())
-                    .foregroundStyle(primaryForeground.opacity(0.72))
+                    .opacity(0.72)
                     .lineLimit(1)
                     .transition(.blurReplace)
                 }
@@ -142,7 +141,7 @@ struct ChowderLiveActivity: Widget {
                             .symbolEffect(.pulse)
                         
                         Text("OpenClaw")
-                            .foregroundStyle(.secondary)
+                            .opacity(0.48)
                     }
                     .transition(.blurReplace)
                 }
@@ -150,24 +149,25 @@ struct ChowderLiveActivity: Widget {
             .font(.subheadline.bold())
             .frame(height: 28)
             .padding(.horizontal, 6)
+            .foregroundStyle(primaryForeground)
             
             // Stacked cards for previous intents - keyed by the intent text itself
             ZStack {
-                let isFinished = state.isFinished
-                
-                if isFinished {
+                if let endDate = state.intentEndDate {
                     VStack(alignment: .center) {
                         Image(systemName: "checkmark.circle.fill")
                             .resizable()
                             .scaledToFit()
                             .foregroundStyle(Color.green)
-                            .frame(width: 21)
+                            .frame(width: 24)
                             .background(Color.white, in: .circle)
                             .compositingGroup()
                         Text(state.subject ?? "Task complete")
                             .font(.subheadline.bold())
+                            .foregroundStyle(primaryForeground)
                     }
                     .frame(maxWidth: .infinity)
+                    .padding(.bottom, 12)
                 } else {
                     ZStack {
                         if intents.isEmpty {
@@ -176,6 +176,7 @@ struct ChowderLiveActivity: Widget {
                                 .multilineTextAlignment(.leading)
                                 .foregroundStyle(.blue)
                                 .padding(12)
+                                .frame(minWidth: 52)
                                 .background(
                                     Color.blue.opacity(userTaskOpacity),
                                     in: .rect(cornerRadius: 16, style: .continuous)
@@ -214,6 +215,7 @@ struct ChowderLiveActivity: Widget {
                 if state.isFinished {
                     Text("^[\(state.stepNumber) step](inflect: true)")
                         .transition(.blurReplace)
+                        .padding(.leading, 8)
                 } else {
                     HStack(spacing: 2) {
                         Text(Image(systemName: state.currentIntentIcon ?? "arrow.turn.down.right"))
@@ -231,19 +233,17 @@ struct ChowderLiveActivity: Widget {
                 Spacer()
                 
                 Group {
-                    if !isWaiting {
-                        if let endDate = state.intentEndDate {
-                            let interval = Duration.seconds(endDate.timeIntervalSince(state.intentStartDate))
-                            Text("Finished in \(interval.formatted(.time(pattern: .minuteSecond)))")
-                        } else {
-                            Text("00:00")
-                                .opacity(0)
-                                .overlay(alignment: .trailing) {
-                                    Text(state.intentStartDate, style: .timer)
-                                        .contentTransition(.numericText(countsDown: false))
-                                        .opacity(0.5)
-                                }
-                        }
+                    if let endDate = state.intentEndDate {
+                        let interval = Duration.seconds(endDate.timeIntervalSince(state.intentStartDate))
+                        Text("Finished in \(interval.formatted(.time(pattern: .minuteSecond)))")
+                    } else if !isWaiting {
+                        Text("00:00")
+                            .opacity(0)
+                            .overlay(alignment: .trailing) {
+                                Text(state.intentStartDate, style: .timer)
+                                    .contentTransition(.numericText(countsDown: false))
+                                    .opacity(0.5)
+                            }
                     }
                 }
                 .font(.footnote.bold())
@@ -260,8 +260,8 @@ struct ChowderLiveActivity: Widget {
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
         .frame(height: 160)
-//        .background(isWaiting || state.isFinished ? Color.black.opacity(0) : Color.black.opacity(0.18))
-        .activityBackgroundTint(isWaiting || state.isFinished ? systemBackground : .clear)
+        .background(Color.white.opacity(isWaiting || state.isFinished ? 1 : 0.75))
+        .activityBackgroundTint(.clear)
     }
     
     @ViewBuilder
@@ -281,8 +281,6 @@ struct ChowderLiveActivity: Widget {
 struct IntentCard: View {
     let text: String
     let isBehind: Bool
-    
-    @State var showSymbol = false
     
     var body: some View {
         HStack(spacing: 10) {
@@ -309,13 +307,8 @@ struct IntentCard: View {
         .zIndex(isBehind ? 0 : 1)
         .transition(.asymmetric(
             insertion: .offset(y: 120),
-            removal: .opacity.animation(.default.delay(0.3))
+            removal: .opacity
         ))
-        .onAppear {
-            withAnimation(.default.delay(1)) {
-                showSymbol = true
-            }
-        }
     }
 }
 

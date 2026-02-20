@@ -14,6 +14,7 @@ final class LiveActivityManager: @unchecked Sendable {
     private let debounceInterval: TimeInterval = 1.0
     private var lastStepNumber: Int = 0
     private var lastCostTotal: String?
+    private var demoTask: Task<Void, Never>?
 
     private init() {}
 
@@ -135,6 +136,9 @@ final class LiveActivityManager: @unchecked Sendable {
     /// End the Live Activity. Shows a brief "Done" state before dismissing.
     /// - Parameter completionSummary: Optional completion message to display (e.g. "Your tickets have been booked").
     func endActivity(completionSummary: String? = nil) {
+        demoTask?.cancel()
+        demoTask = nil
+
         guard let activity = currentActivity else { return }
         debounceTimer?.invalidate()
         debounceTimer = nil
@@ -156,6 +160,65 @@ final class LiveActivityManager: @unchecked Sendable {
         Task {
             await activity.end(content, dismissalPolicy: .after(.now + 8))
             print("⚡ Live Activity ended")
+        }
+    }
+
+    // MARK: - Demo Mode
+
+    /// Starts a demo Live Activity that cycles through all preview steps.
+    /// Holds the initial step for 5 seconds, then advances every 3 seconds until finished.
+    func startDemo() {
+        demoTask?.cancel()
+
+        if currentActivity != nil {
+            endActivity()
+        }
+
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            print("⚡ Live Activities not enabled — skipping demo")
+            return
+        }
+
+        let attributes = ChowderActivityAttributes.preview
+        let demoStart = Date()
+        let initialContent = ActivityContent(
+            state: ChowderActivityAttributes.ContentState.step1,
+            staleDate: nil
+        )
+
+        do {
+            currentActivity = try Activity.request(
+                attributes: attributes,
+                content: initialContent,
+                pushType: nil
+            )
+            print("⚡ Demo Live Activity started")
+        } catch {
+            print("⚡ Failed to start demo Live Activity: \(error.localizedDescription)")
+            return
+        }
+
+        demoTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+
+            let steps: [ChowderActivityAttributes.ContentState] = [.step2, .step3, .step4, .step5, .step6]
+            for step in steps {
+                guard let activity = self?.currentActivity, !Task.isCancelled else { return }
+                await activity.update(ActivityContent(state: step, staleDate: nil))
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled else { return }
+            }
+
+            guard let activity = self?.currentActivity, !Task.isCancelled else { return }
+            self?.currentActivity = nil
+
+            let finishedState = ChowderActivityAttributes.ContentState.finished
+            await activity.end(
+                ActivityContent(state: finishedState, staleDate: nil),
+                dismissalPolicy: .after(.now + 8)
+            )
+            print("⚡ Demo Live Activity finished")
         }
     }
 }

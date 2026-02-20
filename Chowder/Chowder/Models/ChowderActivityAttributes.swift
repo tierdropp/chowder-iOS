@@ -40,8 +40,8 @@ struct ChowderActivityAttributes: ActivityAttributes {
 extension ChowderActivityAttributes {
     static var preview: ChowderActivityAttributes {
         ChowderActivityAttributes(
-            agentName: "Larry",
-            userTask: "I’ll go skiing next weekend."
+            agentName: "OddJob",
+            userTask: "Can you help me book trains for a trip to Margate on the 28th?"
         )
     }
 }
@@ -51,6 +51,7 @@ extension ChowderActivityAttributes.ContentState {
         ChowderActivityAttributes.ContentState(
             subject: "Train to Margate",
             currentIntent: "Searching available trains",
+            currentIntentIcon: "magnifyingglass",
             previousIntent: "Reading project files",
             secondPreviousIntent: "Identifying dependencies",
             intentStartDate: Date(),
@@ -61,26 +62,28 @@ extension ChowderActivityAttributes.ContentState {
 
     static var finished: ChowderActivityAttributes.ContentState {
         ChowderActivityAttributes.ContentState(
-            subject: "Your train to Margate has been booked",
+            subject: "Your train to Margate has been booked.",
             currentIntent: "Complete",
             previousIntent: nil,
             secondPreviousIntent: nil,
-            intentStartDate: Date(),
-            intentEndDate: Date.now.addingTimeInterval(360),
-            stepNumber: 5,
+            intentStartDate: startDate,
+            intentEndDate: startDate.addingTimeInterval(38),
+            stepNumber: 7,
             costTotal: "$1.23"
         )
     }
 
     // MARK: - Progressive States (for cycling through)
+    
+    static var startDate: Date = .now
 
     static var step1: ChowderActivityAttributes.ContentState {
         ChowderActivityAttributes.ContentState(
             subject: "Train to Margate",
-            currentIntent: "Searched trains from London to Margate on June 15",
+            currentIntent: "Searched trains from London to Margate on Feb 28",
             previousIntent: nil,
             secondPreviousIntent: nil,
-            intentStartDate: Date(),
+            intentStartDate: startDate,
             stepNumber: 1,
             costTotal: nil,
         )
@@ -89,10 +92,10 @@ extension ChowderActivityAttributes.ContentState {
     static var step2: ChowderActivityAttributes.ContentState {
         ChowderActivityAttributes.ContentState(
             subject: "Train to Margate",
-            currentIntent: "Comparing departure times and prices",
-            previousIntent: "Searched trains from London to Margate on June 15",
+            currentIntent: "Comparing options…",
+            previousIntent: "Searched trains from London to Margate on Feb 28",
             secondPreviousIntent: nil,
-            intentStartDate: Date(),
+            intentStartDate: startDate,
             stepNumber: 2,
             costTotal: "$0.12",
         )
@@ -101,10 +104,11 @@ extension ChowderActivityAttributes.ContentState {
     static var step3: ChowderActivityAttributes.ContentState {
         ChowderActivityAttributes.ContentState(
             subject: "Train to Margate",
-            currentIntent: "Found the 10:15 departure—best price!",
+            currentIntent: "Evaluating 10:15 departure…",
+            currentIntentIcon: "clock",
             previousIntent: "Compared departure times and prices",
-            secondPreviousIntent: "Searched trains from London to Margate on June 15",
-            intentStartDate: Date(),
+            secondPreviousIntent: "Searched trains from London to Margate on Feb 28",
+            intentStartDate: startDate,
             stepNumber: 3,
             costTotal: "$0.34",
         )
@@ -113,10 +117,11 @@ extension ChowderActivityAttributes.ContentState {
     static var step4: ChowderActivityAttributes.ContentState {
         ChowderActivityAttributes.ContentState(
             subject: "Train to Margate",
-            currentIntent: "Entering passenger details",
-            previousIntent: "Found the 10:15 departure—best price!",
+            currentIntent: "Entering passenger details…",
+            currentIntentIcon: "person",
+            previousIntent: "Picked the 10:15 departure—best price!",
             secondPreviousIntent: "Compared departure times and prices",
-            intentStartDate: Date(),
+            intentStartDate: startDate,
             stepNumber: 4,
             costTotal: "$0.56",
         )
@@ -125,12 +130,26 @@ extension ChowderActivityAttributes.ContentState {
     static var step5: ChowderActivityAttributes.ContentState {
         ChowderActivityAttributes.ContentState(
             subject: "Train to Margate",
-            currentIntent: "Confirming booking",
-            previousIntent: "Entering passenger details",
-            secondPreviousIntent: "Found the 10:15 departure—best price!",
-            intentStartDate: Date(),
+            currentIntent: "Making payment…",
+            currentIntentIcon: "dollarsign",
+            previousIntent: "Entered passenger details",
+            secondPreviousIntent: "Picked the 10:15 departure—best price!",
+            intentStartDate: startDate,
             stepNumber: 5,
             costTotal: "$0.78",
+        )
+    }
+    
+    static var step6: ChowderActivityAttributes.ContentState {
+        ChowderActivityAttributes.ContentState(
+            subject: "Train to Margate",
+            currentIntent: "Confirming booking…",
+            currentIntentIcon: "receipt",
+            previousIntent: "Made payment of $34",
+            secondPreviousIntent: "Entered passenger details",
+            intentStartDate: startDate,
+            stepNumber: 6,
+            costTotal: "$1.20",
         )
     }
 }
