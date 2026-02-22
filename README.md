@@ -14,6 +14,10 @@ The **first use case** for this toolkit is **Chowder** — a native iOS chat cli
 
 Chowder connects to an OpenClaw gateway over WebSocket and implements the first of these — streaming, Live Activity and thinking steps, identity sync, workspace-aware settings — against the OpenClaw Gateway Protocol.
 
+
+https://github.com/user-attachments/assets/5af73b21-0ec1-4804-8a40-39dbd2f10adb
+
+
 ## Features
 
 - **Real-time chat** with streaming AI responses via WebSocket
