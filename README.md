@@ -1,14 +1,14 @@
-# Chowder
+# Chowder for iOS
 
-We're publishing a **toolkit of AI-first interactions** we believe should be common in mobile chat interfaces. We're starting with Live Activity and thinking steps; we're also planning new ways to input speech, add context and media from the keyboard, use location, and more so chat UIs feel native and transparent instead of opaque.
+> We are working on a suit of **AI-first patterns** that we believe should be common in mobile chat interfaces. We're starting with Live Activity and thinking steps; we're also planning new ways to input speech, add context and media from the keyboard, use location, and more so chat UIs feel native and transparent instead of opaque.
 
-**Reach out:** [hello@newmaterial.co](mailto:hello@newmaterial.co) · **Website:** [newmaterial.co](https://newmaterial.co) · **Follow:** [NewMaterial on X](https://x.com/newmaterialco)
+[hello@newmaterial.co](mailto:hello@newmaterial.co) · **Website:** [newmaterial.co](https://newmaterial.co) · **Follow:** [New Material on X](https://x.com/newmaterialco)
 
-*This repo is in a very early state. We’d love feedback and contributions; please be kind.*
+🚧 *This repo is very early work in progress. We’d love feedback and contributions; please be kind.*
 
 ---
 
-The **first use case** for this toolkit is **Chowder** — a native iOS chat client that works with [OpenClaw](https://docs.openclaw.ai). You can talk to your personal AI assistant from your iPhone or iPad over an OpenClaw gateway, using the same sessions and routing as WhatsApp, Telegram, Discord, and other OpenClaw channels. Below is the Chowder + OpenClaw setup and how it works.
+**Chowder** is an native iOS chat client that works with [OpenClaw](https://docs.openclaw.ai) leveraging our toolkit. You can talk to your personal AI assistant from your iPhone or iPad over an OpenClaw gateway, using the same sessions and routing as WhatsApp, Telegram, Discord, and other OpenClaw channels. Below is the Chowder + OpenClaw setup and how it works.
 
 ## Chowder — iOS client for OpenClaw
 
