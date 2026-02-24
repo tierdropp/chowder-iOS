@@ -30,8 +30,10 @@ final class ChatService: NSObject {
     private var isReconnecting = false
     private var hasSentConnectRequest = false
 
-    /// Stable device identifier persisted across launches (used for device pairing).
-    private let deviceId: String
+    /// Stable device identifier derived from Ed25519 public key (used for device pairing).
+    private var deviceId: String {
+        DeviceIdentityService.deviceId
+    }
 
     /// Monotonically increasing request ID counter.
     private var nextRequestId: Int = 1
@@ -49,20 +51,6 @@ final class ChatService: NSObject {
         self.gatewayURL = gatewayURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.token = token
         self.sessionKey = sessionKey
-
-        // Use identifierForVendor when available; fall back to a UUID persisted in UserDefaults.
-        if let vendorId = UIDevice.current.identifierForVendor?.uuidString {
-            self.deviceId = vendorId
-        } else {
-            let key = "com.chowder.deviceId"
-            if let stored = UserDefaults.standard.string(forKey: key) {
-                self.deviceId = stored
-            } else {
-                let generated = UUID().uuidString
-                UserDefaults.standard.set(generated, forKey: key)
-                self.deviceId = generated
-            }
-        }
 
         super.init()
         log("[INIT] gatewayURL=\(self.gatewayURL) sessionKey=\(self.sessionKey) tokenLength=\(token.count) deviceId=\(deviceId)")
@@ -328,7 +316,10 @@ final class ChatService: NSObject {
         // Valid client IDs: webchat-ui, openclaw-control-ui, webchat, cli,
         //   gateway-client, openclaw-macos, openclaw-ios, openclaw-android, node-host, test
         // Valid client modes: webchat, cli, ui, backend, node, probe, test
-        // Device identity is schema-optional; omit until we implement keypair signing.
+        
+        // Sign the nonce with our Ed25519 private key for device authentication
+        let signature = DeviceIdentityService.sign(challenge: nonce)
+        
         let frame: [String: Any] = [
             "type": "req",
             "id": requestId,
@@ -346,6 +337,11 @@ final class ChatService: NSObject {
                 "scopes": ["operator.read", "operator.write"],
                 "auth": [
                     "token": token
+                ],
+                "device": [
+                    "id": deviceId,
+                    "publicKey": DeviceIdentityService.publicKeyBase64,
+                    "signature": signature
                 ],
                 "locale": Locale.current.identifier,
                 "userAgent": "chowder-ios/1.0.0"
